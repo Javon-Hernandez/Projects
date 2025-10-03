@@ -1,0 +1,180 @@
+---
+title: "HW1_Javon_Hernandez.doc"
+output: html_document
+date: "2025-09-23"
+---
+
+```{r}
+mydata<-read.csv("Infectious_Diseases_Google.csv",
+                  header=TRUE, sep=",")
+mydata[!complete.cases(mydata),]
+mydata2<-na.omit(mydata)
+summary(mydata2)
+```
+
+
+```{r}
+#Question 1
+library(sqldf)
+sql.aggregate.2017 <-sqldf("Select Year, Month, Disease, count, state from mydata2 where year= 2017 and month= 8 and state= 'PENNSYLVANIA' order by count desc limit 1")
+sql.aggregate.2016 <-sqldf("Select month, year, disease, hits, state from mydata2 where year= 2016 and state= 'GEORGIA' order by hits asc limit 1")
+```
+
+```{r}
+#Question 2
+library(ggplot2)
+library(sqldf)
+sql.dataframe <- sqldf("select month, SUM(month_count) as Cases
+                        from mydata2
+                        where year = 2015 
+                        and month in ('1', '2', '3', '4', '5', '6') 
+                        and disease = 'campylobacter' 
+                        and state = 'ALABAMA'
+                        group by month
+                       ") 
+
+# Make sure month is ordered correctly (Jan–Jun)
+sql.dataframe$month <- factor(sql.dataframe$month,
+                             levels = c("1","2","3","4","5","6"),
+                             labels = c("Jan","Feb","Mar","Apr","May","Jun"))
+# Plot 1
+ggplot(sql.dataframe, aes(x = month, y = Cases, group = 1, color = "Campylobacter")) +
+  geom_line(color = "Blue", linewidth = 1) +
+  geom_point(size = 3) +
+  labs(title = "Campylobacter Cases in Alabama (Jan–Jun 2015)",
+       x = "Month",
+       y = "Number of Cases", 
+       color = "Disease") +
+  theme_minimal() 
+
+#plot 2
+library(ggplot2)
+sql.dataframe2 <- sqldf("select month, SUM(month_count) as Cases
+                        from mydata2
+                        where year = 2015 
+                        and month in ('7', '8', '9', '10', '11', '12') 
+                        and disease = 'campylobacter' 
+                        and state = 'ALABAMA' 
+                        group by month
+                        ")
+
+# Make sure month is ordered correctly (Jul–Dec)
+sql.dataframe2$month <- factor(sql.dataframe2$month,
+                              levels = c("7","8","9","10","11","12"),
+                              labels = c("Jul","Aug","Sept","Oct","Nov","Dec"))
+
+ggplot(sql.dataframe2, aes(x = month, y = Cases, group = 1, color = "Campylobacter")) +
+  geom_line(color = "Green", linewidth = 1) +
+  geom_point(size = 3) +
+  labs(title = "Campylobacter Cases in Alabama (Jul–Dec 2015)",
+       x = "Month",
+       y = "Number of Cases",
+      color = "Disease") +
+  theme_minimal()
+```
+
+```{r}
+#Question 3
+library(sqldf)
+sql.dataframe3 <- sqldf("select state, month, SUM(month_count) as Cases
+                       from mydata2
+                       where year = 2016
+                       and month between '1' and '12'
+                       and disease = 'campylobacter'
+                       and state in ('TENNESSEE', 'GEORGIA', 'MISSISSIPPI', 'FLORIDA')
+                       group by state, month
+                       order by state, month
+                       ")
+# Month order
+sql.dataframe3$month <- factor(sql.dataframe3$month,
+                               levels = c("1","2","3","4","5","6","7","8","9","10","11","12"),
+                               labels = c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sept","Oct","Nov","Dec"))
+
+# Plot
+library(ggplot2)
+ggplot(sql.dataframe3, aes(x = factor(month), y = Cases, fill = state)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
+  scale_x_discrete(labels = month.abb[1:12]) +
+  labs(
+    title = "Campylobacter Cases in Neighboring States of Alabama (2016)",
+    x = "Month",
+    y = "Number of Cases",
+    fill = "State"
+  ) +
+  theme_minimal(base_size = 14)
+```
+
+```{r}
+#Question 4
+library(sqldf)
+# Step 1: run SQL for sum, avg, and hits
+sql.dataframe4 <- sqldf("SELECT year, disease,
+                                  SUM(month_count) AS total_cases_year,
+                                  AVG(month_count) AS avg_cases_per_month,
+                                  AVG(hits) AS avg_hits_per_month
+                                  FROM mydata2
+                                  GROUP BY year, disease
+                                  ORDER BY year, disease
+                                   ")
+
+# Step 2: add the median
+median <- aggregate(month_count ~ year + disease, data = mydata2, FUN = median)
+
+# Step 3: merge results
+sql.dataframe4 <- merge(sql.dataframe4, median,
+                  by = c("year", "disease"))
+
+# Rename for clarity
+names(sql.dataframe4)[names(sql.dataframe4) == "month_count"] <- "median_cases_per_month"
+
+salmonella_df <- subset(sql.dataframe4, disease == "Salmonella")
+
+library(ggplot2)
+
+# Normalize disease values (trim + lowercase)
+sql.dataframe4$disease_clean <- tolower(trimws(as.character(sql.dataframe4$disease)))
+
+#Try an exact match first, then a contains match
+salmonella_df <- subset(sql.dataframe4, disease_clean == "salmonella")
+
+
+#Plot trend of median cases per month across years
+ggplot(salmonella_df, aes(x = year, y = median_cases_per_month)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 2) +
+  geom_text(aes(label = median_cases_per_month), vjust = -0.6, size = 3) +
+  scale_x_continuous(breaks = unique(salmonella_df$year)) +
+  labs(
+    title = "Median Cases Per Month for Salmonella",
+    x = "Year",
+    y = "Median Cases Per Month"
+  ) +
+  theme_minimal(base_size = 14)
+```
+
+```{r}
+#Question 5
+library(sqldf)
+sql.dataframe5 <- sqldf("select year, state, disease, Sum(month_count) as annual_total_cases
+                        from mydata2
+                        where year = 2016
+                        and disease = 'chlamydia'
+                        group by state
+                        ")
+
+library(ggplot2)
+# Use sql.dataframe5 (all states included)
+ggplot(sql.dataframe5, aes(x = "", y = annual_total_cases, fill = factor(state))) + 
+  geom_bar(width = 1, stat = "identity") +
+  coord_polar(theta = "y") +   # make it a pie chart
+  theme(axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        plot.title = element_text(hjust = 0.5)) + 
+  labs(fill = "State", 
+       x = NULL, 
+       y = NULL, 
+       title = "Chlamydia Cases by State (2016)", 
+       caption = "Source: mydata2")
+```
+
